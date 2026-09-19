@@ -1,0 +1,9 @@
+{
+  "appId": "com.myapp.app",
+  "appName": "My App Name",
+  "webDir": "www",
+  "server": {
+    "url": "https://your-website-url.com",
+    "cleartext": true
+  }
+}
