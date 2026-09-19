@@ -1,9 +1,9 @@
 {
-  "appId": "com.myapp.app",
-  "appName": "My App Name",
+  "appId": "com.adminravi.app",
+  "appName": "Admin Ravi  ",
   "webDir": "www",
   "server": {
-    "url": "https://your-website-url.com",
+    "url": "https://adminn.site.je",
     "cleartext": true
   }
 }
