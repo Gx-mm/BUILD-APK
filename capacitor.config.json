@@ -1,9 +1,9 @@
 {
-  "appId": "com.adminravi.app",
-  "appName": "Admin Ravi  ",
+  "appId": "com.trendify.app",
+  "appName": "Trendify ",
   "webDir": "www",
   "server": {
-    "url": "https://adminn.site.je",
+    "url": "https://trendify.site.je",
     "cleartext": true
   }
 }
