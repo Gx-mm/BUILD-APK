@@ -30,28 +30,7 @@ jobs:
           mkdir -p www
           touch www/index.html
           npx cap add android
-          
-          # Deep link intent filter AndroidManifest.xml me add karne ke liye
-          node -e '
-          const fs = require("fs");
-          const manifestPath = "android/app/src/main/AndroidManifest.xml";
-          if (fs.existsSync(manifestPath)) {
-            let manifest = fs.readFileSync(manifestPath, "utf8");
-            const intentFilter = `
-                <intent-filter android:autoVerify="true">
-                    <action android:name="android.intent.action.VIEW" />
-                    <category android:name="android.intent.category.DEFAULT" />
-                    <category android:name="android.intent.category.BROWSABLE" />
-                    <data android:scheme="https" android:host="trendify.site.je" />
-                </intent-filter>
-            </activity>`;
-            manifest = manifest.replace("</activity>", intentFilter);
-            fs.writeFileSync(manifestPath, manifest);
-            console.log("Intent filter successfully added!");
-          }
-          '
-          
-          # Optional: Agar repo me appicon.png hai to icon banaye
+
           mkdir -p assets
           if [ -f "appicon.png" ]; then
             cp appicon.png assets/icon.png
@@ -68,7 +47,6 @@ jobs:
 
       - name: Rename APK and Upload Artifact
         run: |
-          # APK ka naam app-debug.apk se change kar raha hai
           APP_NAME=$(jq -r '.appName' capacitor.config.json | sed 's/ //g')
           mv android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/${APP_NAME}.apk"
           echo "APK_FILE=${APP_NAME}.apk" >> $GITHUB_ENV
