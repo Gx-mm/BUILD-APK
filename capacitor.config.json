@@ -1,9 +1,13 @@
 {
   "appId": "com.trendify.app",
-  "appName": "Trendify ",
+  "appName": "Trendify",
   "webDir": "www",
   "server": {
     "url": "https://trendify.site.je",
-    "cleartext": true
+    "cleartext": true,
+    "allowNavigation": [
+      "accounts.google.com",
+      "*.supabase.co"
+    ]
   }
 }
