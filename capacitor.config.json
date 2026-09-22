@@ -11,5 +11,12 @@
       "*.supabase.co",
       "trendify.site.je"
     ]
+  },
+  "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "837209432382-guip02q8bekppa6dahsho250ka6lpdrk.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    }
   }
 }
