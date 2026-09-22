@@ -31,6 +31,26 @@ jobs:
           touch www/index.html
           npx cap add android
           
+          # Deep link intent filter AndroidManifest.xml me add karne ke liye
+          node -e '
+          const fs = require("fs");
+          const manifestPath = "android/app/src/main/AndroidManifest.xml";
+          if (fs.existsSync(manifestPath)) {
+            let manifest = fs.readFileSync(manifestPath, "utf8");
+            const intentFilter = `
+                <intent-filter android:autoVerify="true">
+                    <action android:name="android.intent.action.VIEW" />
+                    <category android:name="android.intent.category.DEFAULT" />
+                    <category android:name="android.intent.category.BROWSABLE" />
+                    <data android:scheme="https" android:host="trendify.site.je" />
+                </intent-filter>
+            </activity>`;
+            manifest = manifest.replace("</activity>", intentFilter);
+            fs.writeFileSync(manifestPath, manifest);
+            console.log("Intent filter successfully added!");
+          }
+          '
+          
           # Optional: Agar repo me appicon.png hai to icon banaye
           mkdir -p assets
           if [ -f "appicon.png" ]; then
@@ -59,4 +79,3 @@ jobs:
         with:
           name: ${{ env.ZIP_NAME }}
           path: android/app/build/outputs/apk/debug/${{ env.APK_FILE }}
-        
