@@ -7,7 +7,9 @@
     "cleartext": true,
     "allowNavigation": [
       "accounts.google.com",
-      "*.supabase.co"
+      "*.google.com",
+      "*.supabase.co",
+      "trendify.site.je"
     ]
   }
 }
