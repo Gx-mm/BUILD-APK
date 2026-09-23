@@ -59,38 +59,4 @@ jobs:
         with:
           name: ${{ env.ZIP_NAME }}
           path: android/app/build/outputs/apk/debug/${{ env.APK_FILE }}
-```[cite: 1]
-
----
-
-### capacitor.config.json[cite: 2]
-
-```json
-{
-  "appId": "com.trendify.app",
-  "appName": "Trendify ",
-  "webDir": "www",
-  "server": {
-    "url": "https://trendify.site.je",
-    "cleartext": true
-  }
-}
-```[cite: 2]
-
----
-
-### package.json[cite: 3]
-
-```json
-{
-  "name": "my-web-to-app",
-  "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "@capacitor/core": "^6.0.0",
-    "@capacitor/android": "^6.0.0",
-    "@capacitor/cli": "^6.0.0",
-    "@capacitor/assets": "^3.0.5"
-  }
-}
 ```[cite: 3]
