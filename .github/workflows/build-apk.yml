@@ -59,4 +59,3 @@ jobs:
         with:
           name: ${{ env.ZIP_NAME }}
           path: android/app/build/outputs/apk/debug/${{ env.APK_FILE }}
-```[cite: 3]
