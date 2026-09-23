@@ -1,8 +1,10 @@
-name: Build Android APK
+name: Build Trendify APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -10,50 +12,63 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      # 1. Repository checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      - name: Setup Java JDK
+      # 3. Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
 
-      - name: Prepare Workspace & Add Android
+      # 4. Install dependencies
+      - name: Install Dependencies
+        run: npm install
+
+      # 5. Create minimal local web directory
+      # APK actual website capacitor.config.json ke
+      # server.url se load karega.
+      - name: Prepare Web Directory
         run: |
-          npm install
           mkdir -p www
-          touch www/index.html
-          npx cap add android
+          printf '<!DOCTYPE html><html><body></body></html>' > www/index.html
 
-          mkdir -p assets
-          if [ -f "appicon.png" ]; then
-            cp appicon.png assets/icon.png
-            npx @capacitor/assets generate --android
-          fi
-          
-          npx cap sync android
-
-      - name: Build Debug APK
+      # 6. Create Android project only if it does not already exist
+      - name: Create Android Project
         run: |
-          cd android
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+
+      # 7. Sync Capacitor
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      # 8. Build Debug APK
+      - name: Build Debug APK
+        working-directory: android
+        run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Rename APK and Upload Artifact
+      # 9. Rename APK
+      - name: Prepare APK
         run: |
-          APP_NAME=$(jq -r '.appName' capacitor.config.json | sed 's/ //g')
-          mv android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/${APP_NAME}.apk"
-          echo "APK_FILE=${APP_NAME}.apk" >> $GITHUB_ENV
-          echo "ZIP_NAME=${APP_NAME}" >> $GITHUB_ENV
+          mkdir -p output
+          cp android/app/build/outputs/apk/debug/app-debug.apk output/Trendify.apk
 
-      - name: Upload Build
+      # 10. Upload APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ZIP_NAME }}
-          path: android/app/build/outputs/apk/debug/${{ env.APK_FILE }}
+          name: Trendify-APK
+          path: output/Trendify.apk
