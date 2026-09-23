@@ -5,70 +5,240 @@ on:
     branches:
       - main
       - master
+
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Repository checkout
+
+      # 1. Checkout GitHub Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Node.js
+
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      # 3. Java 17
+
+      # 3. Setup Java 17
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 4. Install dependencies
+
+      # 4. Install npm dependencies
       - name: Install Dependencies
         run: npm install
 
-      # 5. Create minimal local web directory
-      # APK actual website capacitor.config.json ke
-      # server.url se load karega.
+
+      # 5. Prepare Capacitor Web Directory
       - name: Prepare Web Directory
         run: |
+          rm -rf www
           mkdir -p www
-          printf '<!DOCTYPE html><html><body></body></html>' > www/index.html
 
-      # 6. Create Android project only if it does not already exist
-      - name: Create Android Project
+          cat > www/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta
+              name="viewport"
+              content="width=device-width, initial-scale=1.0"
+            >
+            <title>Trendify</title>
+          </head>
+          <body>
+          </body>
+          </html>
+          EOF
+
+
+      # 6. Remove incomplete Android project
+      - name: Remove Incomplete Android Project
         run: |
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
+          rm -rf android
 
-      # 7. Sync Capacitor
+
+      # 7. Generate Fresh Capacitor Android Project
+      - name: Add Android Platform
+        run: |
+          npx cap add android
+
+
+      # 8. Sync Capacitor
       - name: Sync Capacitor
-        run: npx cap sync android
+        run: |
+          npx cap sync android
 
-      # 8. Build Debug APK
+
+      # 9. Configure Google OAuth Deep Link
+      - name: Configure OAuth Deep Link
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path(
+              "android/app/src/main/AndroidManifest.xml"
+          )
+
+          if not manifest.exists():
+              raise SystemExit(
+                  "AndroidManifest.xml not found!"
+              )
+
+          text = manifest.read_text(
+              encoding="utf-8"
+          )
+
+          # Find MainActivity
+          match = re.search(
+              r'<activity\b(?=[^>]*android:name="\.MainActivity")[^>]*>',
+              text,
+              re.DOTALL
+          )
+
+          if not match:
+              raise SystemExit(
+                  "MainActivity not found in AndroidManifest.xml!"
+              )
+
+          activity_start = match.start()
+          activity_end = match.end()
+
+          open_tag = text[activity_start:activity_end]
+
+          # Add singleTask if missing
+          if 'android:launchMode="singleTask"' not in open_tag:
+
+              if 'android:exported="true"' in open_tag:
+                  open_tag = open_tag.replace(
+                      'android:exported="true"',
+                      'android:exported="true"\n'
+                      '        android:launchMode="singleTask"',
+                      1
+                  )
+              else:
+                  open_tag = open_tag[:-1] + '\n' \
+                      '        android:launchMode="singleTask">\n'
+
+              text = (
+                  text[:activity_start]
+                  + open_tag
+                  + text[activity_end:]
+              )
+
+          # Check if Trendify OAuth deep link already exists
+          if 'android:scheme="trendify"' not in text:
+
+              # Find MainActivity again after modification
+              match = re.search(
+                  r'<activity\b(?=[^>]*android:name="\.MainActivity")[^>]*>',
+                  text,
+                  re.DOTALL
+              )
+
+              if not match:
+                  raise SystemExit(
+                      "MainActivity not found after modification!"
+                  )
+
+              activity_open_end = match.end()
+
+              activity_close = text.find(
+                  "</activity>",
+                  activity_open_end
+              )
+
+              if activity_close == -1:
+                  raise SystemExit(
+                      "MainActivity closing tag not found!"
+                  )
+
+              deep_link = '''
+                  <intent-filter>
+                      <action android:name="android.intent.action.VIEW" />
+
+                      <category android:name="android.intent.category.DEFAULT" />
+                      <category android:name="android.intent.category.BROWSABLE" />
+
+                      <data
+                          android:scheme="trendify"
+                          android:host="auth"
+                          android:pathPrefix="/callback" />
+                  </intent-filter>
+
+          '''
+
+              text = (
+                  text[:activity_close]
+                  + deep_link
+                  + text[activity_close:]
+              )
+
+          manifest.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print("OAuth deep link configured successfully.")
+          print("Callback: trendify://auth/callback")
+          PY
+
+
+      # 10. Verify Android Manifest
+      - name: Verify Android OAuth Configuration
+        run: |
+          echo "===== AndroidManifest.xml ====="
+          cat android/app/src/main/AndroidManifest.xml
+
+          echo ""
+          echo "===== Checking OAuth Deep Link ====="
+
+          grep -q 'android:scheme="trendify"' \
+            android/app/src/main/AndroidManifest.xml
+
+          grep -q 'android:host="auth"' \
+            android/app/src/main/AndroidManifest.xml
+
+          grep -q 'android:pathPrefix="/callback"' \
+            android/app/src/main/AndroidManifest.xml
+
+          echo "OAuth deep link verification PASSED."
+
+
+      # 11. Build Debug APK
       - name: Build Debug APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      # 9. Rename APK
+
+      # 12. Prepare APK
       - name: Prepare APK
         run: |
           mkdir -p output
-          cp android/app/build/outputs/apk/debug/app-debug.apk output/Trendify.apk
 
-      # 10. Upload APK
-      - name: Upload APK
+          cp \
+            android/app/build/outputs/apk/debug/app-debug.apk \
+            output/Trendify.apk
+
+
+      # 13. Upload APK Artifact
+      - name: Upload Trendify APK
         uses: actions/upload-artifact@v4
         with:
           name: Trendify-APK
           path: output/Trendify.apk
+          if-no-files-found: error
