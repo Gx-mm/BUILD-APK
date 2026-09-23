@@ -1,20 +1,11 @@
 {
-  "name": "trendify",
+  "name": "my-web-to-app",
   "version": "1.0.0",
   "private": true,
-  "description": "Trendify Android App",
-  "scripts": {
-    "build": "echo Trendify remote web app",
-    "cap:sync": "npx cap sync android",
-    "cap:open": "npx cap open android"
-  },
   "dependencies": {
-    "@capacitor/core": "^6.2.0",
-    "@capacitor/android": "^6.2.0",
-    "@capacitor/browser": "^6.0.0",
-    "@capacitor/app": "^6.0.0"
-  },
-  "devDependencies": {
-    "@capacitor/cli": "^6.2.0"
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/assets": "^3.0.5"
   }
 }
