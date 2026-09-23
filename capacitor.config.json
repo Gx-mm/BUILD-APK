@@ -4,12 +4,6 @@
   "webDir": "www",
   "server": {
     "url": "https://trendify.site.je",
-    "cleartext": true,
-    "allowNavigation": [
-      "accounts.google.com",
-      "*.google.com",
-      "*.supabase.co",
-      "trendify.site.je"
-    ]
+    "cleartext": false
   }
 }
