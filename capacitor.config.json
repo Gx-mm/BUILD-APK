@@ -1,9 +1,10 @@
+
 {
-  "appId": "com.Gemini.app",
-  "appName": "Gemini ",
+  "appId": "com.trendify.app",
+  "appName": "Trendify",
   "webDir": "www",
   "server": {
-    "url": "https://gemini.google.com/app",
-    "cleartext": true
+    "url": "https://trendify.site.je",
+    "cleartext": false
   }
 }
