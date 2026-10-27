@@ -1,61 +1,135 @@
-name: Build Android APK
+
+name: Build Trendify Release APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
 
-      - name: Setup Java JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '17'
+          distribution: zulu
+          java-version: "17"
 
-      - name: Prepare Workspace & Add Android
+      - name: Validate configuration
+        run: |
+          test -f capacitor.config.json
+          node -e '
+            const c = require("./capacitor.config.json");
+            if (c.appName !== "Trendify") throw Error("Wrong appName");
+            if (c.server?.url !== "https://trendify.site.je") throw Error("Wrong website URL");
+            if (c.appId !== "com.trendify.app") throw Error("Unexpected appId");
+          '
+
+      - name: Install dependencies and prepare Android
         run: |
           npm install
           mkdir -p www
-          touch www/index.html
+          test -f www/index.html || \
+            echo '<!doctype html><html><body>Trendify</body></html>' > www/index.html
+
           npx cap add android
-          
-          # Optional: Agar repo me appicon.png hai to icon banaye
-          mkdir -p assets
-          if [ -f "appicon.png" ]; then
+
+          if [ -f appicon.png ]; then
+            mkdir -p assets
             cp appicon.png assets/icon.png
             npx @capacitor/assets generate --android
           fi
-          
+
           npx cap sync android
 
-      - name: Build Debug APK
+      - name: Check signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          test -n "$STORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+
+      - name: Restore release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode \
+            > "$RUNNER_TEMP/trendify-release.jks"
+          test -s "$RUNNER_TEMP/trendify-release.jks"
+
+      - name: Build release APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
-      - name: Rename APK and Upload Artifact
+      - name: Align and sign release APK
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
         run: |
-          # APK ka naam app-debug.apk se change kar raha hai
-          APP_NAME=$(jq -r '.appName' capacitor.config.json | sed 's/ //g')
-          mv android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/${APP_NAME}.apk"
-          echo "APK_FILE=${APP_NAME}.apk" >> $GITHUB_ENV
-          echo "ZIP_NAME=${APP_NAME}" >> $GITHUB_ENV
+          set -euo pipefail
 
-      - name: Upload Build
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK"
+
+          BT="$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 \
+            -type d | sort -V | tail -1)"
+          test -x "$BT/zipalign"
+          test -x "$BT/apksigner"
+
+          APK="$(find android/app/build/outputs/apk/release \
+            -maxdepth 1 -type f -name '*unsigned.apk' | head -1)"
+
+          if [ -z "$APK" ]; then
+            APK="android/app/build/outputs/apk/release/app-release.apk"
+          fi
+          test -f "$APK"
+
+          "$BT/zipalign" -f -p 4 \
+            "$APK" "$RUNNER_TEMP/trendify-aligned.apk"
+
+          "$BT/apksigner" sign \
+            --ks "$RUNNER_TEMP/trendify-release.jks" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:STORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --out "$RUNNER_TEMP/Trendify-release.apk" \
+            "$RUNNER_TEMP/trendify-aligned.apk"
+
+          "$BT/apksigner" verify --verbose \
+            "$RUNNER_TEMP/Trendify-release.apk"
+
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ZIP_NAME }}
-          path: android/app/build/outputs/apk/debug/${{ env.APK_FILE }}
+          name: Trendify-release
+          path: ${{ runner.temp }}/Trendify-release.apk
+          if-no-files-found: error
+
+      - name: Clean up temporary signing files
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/trendify-release.jks"
+          rm -f "$RUNNER_TEMP/trendify-aligned.apk"
+          rm -f "$RUNNER_TEMP/Trendify-release.apk"
