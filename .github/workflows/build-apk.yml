@@ -1,10 +1,23 @@
-
-name: Build Trendify Release APK
+name: Web2App Dynamic Build
 
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
+    inputs:
+      build_id:
+        description: "Supabase Build ID"
+        required: true
+      app_name:
+        description: "App Name"
+        required: true
+      app_id:
+        description: "Package Name (e.g. com.example.app)"
+        required: true
+      web_url:
+        description: "Website URL"
+        required: true
+      icon_url:
+        description: "Direct URL of uploaded app icon"
+        required: true
 
 permissions:
   contents: read
@@ -28,22 +41,39 @@ jobs:
           distribution: zulu
           java-version: "17"
 
-      - name: Validate configuration
+      - name: Generate Dynamic Config & Download Icon
+        env:
+          APP_NAME: ${{ inputs.app_name }}
+          APP_ID: ${{ inputs.app_id }}
+          WEB_URL: ${{ inputs.web_url }}
+          ICON_URL: ${{ inputs.icon_url }}
         run: |
-          test -f capacitor.config.json
+          # 1. User ka upload kiya hua icon download karein
+          curl -f -L "$ICON_URL" -o appicon.png
+
+          # 2. Safe tareeke se capacitor.config.json banayein (spaces/special chars ke saath bhi safe)
           node -e '
-            const c = require("./capacitor.config.json");
-            if (c.appName !== "Trendify") throw Error("Wrong appName");
-            if (c.server?.url !== "https://trendify.site.je") throw Error("Wrong website URL");
-            if (c.appId !== "com.trendify.app") throw Error("Unexpected appId");
+            const fs = require("fs");
+            const config = {
+              appId: process.env.APP_ID,
+              appName: process.env.APP_NAME,
+              webDir: "www",
+              server: {
+                url: process.env.WEB_URL,
+                cleartext: true
+              }
+            };
+            fs.writeFileSync("capacitor.config.json", JSON.stringify(config, null, 2));
           '
+          cat capacitor.config.json
 
       - name: Install dependencies and prepare Android
+        env:
+          APP_NAME: ${{ inputs.app_name }}
         run: |
           npm install
           mkdir -p www
-          test -f www/index.html || \
-            echo '<!doctype html><html><body>Trendify</body></html>' > www/index.html
+          echo "<!doctype html><html><body>${APP_NAME}</body></html>" > www/index.html
 
           npx cap add android
 
@@ -55,25 +85,12 @@ jobs:
 
           npx cap sync android
 
-      - name: Check signing secrets
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          test -n "$KEYSTORE_BASE64"
-          test -n "$STORE_PASSWORD"
-          test -n "$KEY_ALIAS"
-          test -n "$KEY_PASSWORD"
-
       - name: Restore release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode \
-            > "$RUNNER_TEMP/trendify-release.jks"
-          test -s "$RUNNER_TEMP/trendify-release.jks"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          test -s "$RUNNER_TEMP/release.jks"
 
       - name: Build release APK
         run: |
@@ -81,55 +98,80 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      - name: Align and sign release APK
+      - name: Align, Sign and Zip Release APK
         env:
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          APP_NAME: ${{ inputs.app_name }}
+          BUILD_ID: ${{ inputs.build_id }}
         shell: bash
         run: |
           set -euo pipefail
 
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          test -n "$SDK"
+          BT="$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
 
-          BT="$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 \
-            -type d | sort -V | tail -1)"
-          test -x "$BT/zipalign"
-          test -x "$BT/apksigner"
-
-          APK="$(find android/app/build/outputs/apk/release \
-            -maxdepth 1 -type f -name '*unsigned.apk' | head -1)"
-
+          APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*unsigned.apk' | head -1)"
           if [ -z "$APK" ]; then
             APK="android/app/build/outputs/apk/release/app-release.apk"
           fi
-          test -f "$APK"
 
-          "$BT/zipalign" -f -p 4 \
-            "$APK" "$RUNNER_TEMP/trendify-aligned.apk"
+          "$BT/zipalign" -f -p 4 "$APK" "$RUNNER_TEMP/aligned.apk"
 
+          # App ke naam se spaces hatakar clean filename banayein
+          SAFE_NAME=$(echo "$APP_NAME" | tr -cd '[:alnum:]_-')
+          [ -z "$SAFE_NAME" ] && SAFE_NAME="App"
+
+          mkdir -p "$RUNNER_TEMP/package"
           "$BT/apksigner" sign \
-            --ks "$RUNNER_TEMP/trendify-release.jks" \
+            --ks "$RUNNER_TEMP/release.jks" \
             --ks-key-alias "$KEY_ALIAS" \
             --ks-pass env:STORE_PASSWORD \
             --key-pass env:KEY_PASSWORD \
-            --out "$RUNNER_TEMP/Trendify-release.apk" \
-            "$RUNNER_TEMP/trendify-aligned.apk"
+            --out "$RUNNER_TEMP/package/${SAFE_NAME}.apk" \
+            "$RUNNER_TEMP/aligned.apk"
 
-          "$BT/apksigner" verify --verbose \
-            "$RUNNER_TEMP/Trendify-release.apk"
+          cd "$RUNNER_TEMP/package"
+          zip -r "$RUNNER_TEMP/${BUILD_ID}.zip" "${SAFE_NAME}.apk"
 
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Trendify-release
-          path: ${{ runner.temp }}/Trendify-release.apk
-          if-no-files-found: error
+      - name: Upload ZIP to Supabase & Update Database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          FILE_PATH="$RUNNER_TEMP/${BUILD_ID}.zip"
 
-      - name: Clean up temporary signing files
+          # 1. ZIP ko Supabase 'apks' bucket me upload karein
+          curl -f -X POST "$SUPABASE_URL/storage/v1/object/apks/${BUILD_ID}.zip" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/zip" \
+            --data-binary @"$FILE_PATH"
+
+          PUBLIC_URL="$SUPABASE_URL/storage/v1/object/public/apks/${BUILD_ID}.zip"
+
+          # 2. Supabase table me status 'completed' aur link save karein
+          curl -f -X PATCH "$SUPABASE_URL/rest/v1/builds?id=eq.${BUILD_ID}" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\": \"completed\", \"download_url\": \"$PUBLIC_URL\"}"
+
+      - name: Mark Failed on Error
+        if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          curl -X PATCH "$SUPABASE_URL/rest/v1/builds?id=eq.${BUILD_ID}" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\": \"failed\"}"
+
+      - name: Clean up temporary files
         if: always()
         run: |
-          rm -f "$RUNNER_TEMP/trendify-release.jks"
-          rm -f "$RUNNER_TEMP/trendify-aligned.apk"
-          rm -f "$RUNNER_TEMP/Trendify-release.apk"
+          rm -rf "$RUNNER_TEMP/release.jks" "$RUNNER_TEMP/aligned.apk" "$RUNNER_TEMP/package" "$RUNNER_TEMP/${{ inputs.build_id }}.zip"
