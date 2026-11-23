@@ -51,7 +51,7 @@ jobs:
           # 1. User ka upload kiya hua icon download karein
           curl -f -L "$ICON_URL" -o appicon.png
 
-          # 2. Safe tareeke se capacitor.config.json banayein (spaces/special chars ke saath bhi safe)
+          # 2. Safe tareeke se capacitor.config.json banayein
           node -e '
             const fs = require("fs");
             const config = {
@@ -101,8 +101,8 @@ jobs:
       - name: Align, Sign and Zip Release APK
         env:
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           APP_NAME: ${{ inputs.app_name }}
           BUILD_ID: ${{ inputs.build_id }}
         shell: bash
@@ -175,3 +175,4 @@ jobs:
         if: always()
         run: |
           rm -rf "$RUNNER_TEMP/release.jks" "$RUNNER_TEMP/aligned.apk" "$RUNNER_TEMP/package" "$RUNNER_TEMP/${{ inputs.build_id }}.zip"
+          
